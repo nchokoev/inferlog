@@ -1,0 +1,14 @@
+{
+  "name": "inferlog",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:proxy": "pnpm --filter @inferlog/proxy dev",
+    "dev:dashboard": "pnpm --filter @inferlog/dashboard dev",
+    "build": "pnpm --filter @inferlog/proxy build && pnpm --filter @inferlog/dashboard build",
+    "db:migrate": "psql $DATABASE_URL -f db/migrations/001_initial.sql"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

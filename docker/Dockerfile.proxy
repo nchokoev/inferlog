@@ -1,0 +1,30 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+RUN npm install -g pnpm
+
+COPY pnpm-workspace.yaml package.json ./
+COPY packages/proxy/package.json ./packages/proxy/
+
+RUN pnpm install --no-frozen-lockfile
+
+COPY packages/proxy ./packages/proxy
+RUN pnpm --filter @inferlog/proxy build
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+FROM node:20-alpine
+WORKDIR /app
+
+RUN npm install -g pnpm
+
+COPY pnpm-workspace.yaml package.json ./
+COPY packages/proxy/package.json ./packages/proxy/
+
+RUN pnpm install --prod --no-frozen-lockfile
+
+COPY --from=builder /app/packages/proxy/dist ./packages/proxy/dist
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+CMD ["node", "packages/proxy/dist/index.js"]
