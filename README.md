@@ -1,85 +1,145 @@
 # Inferlog
 
-LLM inference cost & usage monitoring — transparent proxy + dashboard.
+**Open-source LLM cost & usage monitoring.** See exactly what your LLMs are costing you — without changing how you build.
 
-## Quick start (Docker)
+Point your existing LLM client at the Inferlog proxy instead of the provider. Every call gets logged. Nothing else changes.
+
+---
+
+## Quick start (3 lines)
 
 ```bash
-cp .env.example .env
-# Edit .env: set BETTER_AUTH_SECRET to a random 32+ char string
+# 1. Start the proxy + dashboard
+docker run -d -p 3001:3001 -p 3000:3000 inferlog/inferlog
 
+# 2. Point your client at the proxy
+base_url = "http://localhost:3001/openai/v1"   # OpenAI
+# base_url = "http://localhost:3001/anthropic"  # Anthropic
+
+# 3. Done — open http://localhost:3000 to see your usage dashboard
+```
+
+---
+
+## Features
+
+- **Per-model cost breakdown** — know exactly how much GPT-4o vs Claude Sonnet vs o1 cost you
+- **Tag calls by feature** — group costs by `x-llm-tag` header (e.g. `production`, `staging`, `my-feature`)
+- **Multi-tenancy** — isolated workspaces, per-workspace API keys
+- **API key auth** — pass `x-inferlog-key` to attribute calls to your workspace
+- **Latency tracking** — spot slow responses that are burning budget
+- **Privacy-first** — no prompt or response content ever logged. Only metadata: model, tokens, cost, latency, tag
+
+---
+
+## Supported providers
+
+| Provider | Status |
+|----------|--------|
+| OpenAI   | ✅ |
+| Anthropic | ✅ |
+| Azure OpenAI | coming soon |
+| Google AI (Gemini) | coming soon |
+
+---
+
+## Integration
+
+### OpenAI
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:3001/openai/v1",
+    api_key="sk-...",                          # your real API key
+    default_headers={"x-inferlog-key": "ilg_..."}  # your Inferlog API key
+)
+
+# Tag by feature (optional)
+client = OpenAI(
+    base_url="http://localhost:3001/openai/v1",
+    api_key="sk-...",
+    default_headers={
+        "x-inferlog-key": "ilg_...",
+        "x-llm-tag": "checkout-flow"
+    }
+)
+```
+
+### Anthropic
+
+```python
+import anthropic
+
+client = anthropic.Anthropic(
+    base_url="http://localhost:3001/anthropic",
+    api_key="sk-ant-...",
+    headers={"x-inferlog-key": "ilg_...", "x-llm-tag": "code-review"}
+)
+```
+
+### Any HTTP client
+
+```bash
+curl -X POST http://localhost:3001/openai/v1/chat/completions \
+  -H "Authorization: Bearer sk-..." \
+  -H "x-inferlog-key: ilg_..." \
+  -H "x-llm-tag: my-feature" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}'
+```
+
+---
+
+## Self-hosting
+
+Inferlog runs entirely on your infrastructure:
+
+```bash
+git clone https://github.com/nchokoev/inferlog.git
+cd inferlog
+cp .env.example .env   # set BETTER_AUTH_SECRET
 cd docker
 docker compose up --build
 ```
 
-- Proxy:     http://localhost:3001
-- Dashboard: http://localhost:3000
+- Dashboard: `http://your-server:3000`
+- Proxy: `http://your-server:3001`
 
-## Usage
+### Get your free API key
 
-Point your LLM client at the proxy instead of the provider:
+Sign up at the dashboard (it's just a local account) and create workspace API keys from the Settings page.
 
-**OpenAI**
-```python
-from openai import OpenAI
-client = OpenAI(base_url="http://localhost:3001/openai/v1", api_key="sk-...")
-```
+---
 
-**Anthropic**
-```python
-import anthropic
-client = anthropic.Anthropic(base_url="http://localhost:3001/anthropic", api_key="sk-ant-...")
-```
+## Privacy & Security
 
-**Tag calls** for grouping by passing `x-llm-tag` header:
-```python
-client = OpenAI(
-    base_url="http://localhost:3001/openai/v1",
-    api_key="sk-...",
-    default_headers={"x-llm-tag": "my-feature"},
-)
-```
+**We take privacy seriously — your prompts never leave your infrastructure.**
 
-**Authenticate requests** using an Inferlog API key via `x-inferlog-key` header:
-```python
-client = OpenAI(
-    base_url="http://localhost:3001/openai/v1",
-    api_key="sk-...",
-    default_headers={"x-inferlog-key": "ilg-..."},
-)
-```
+- **Self-hosted:** Everything runs on your servers. Zero data leaves your network. We have no access.
+- **Hosted (when available):** Only metadata is logged — model name, token count, cost, latency, tag, status code. Prompt content and responses are forwarded to the LLM provider and **never stored** by us.
+- **API keys:** Your real provider API keys pass through the proxy and are never persisted — only a SHA256 hash of your Inferlog API key is stored.
+- **Open source:** Verify every claim in the code at [github.com/nchokoev/inferlog](https://github.com/nchokoev/inferlog)
 
-## Development
+---
 
-```bash
-# Install deps
-pnpm install
+## Pricing
 
-# Start postgres (or use docker compose up postgres)
-docker compose -f docker/docker-compose.yml up postgres -d
+Inferlog is free for self-hosting (MIT license).
 
-# Copy and fill env
-cp .env.example .env
+Managed hosted service (coming soon): **€29/month** per workspace — everything hosted for you, zero infra work.
 
-# Run migrations
-psql $DATABASE_URL -f db/migrations/001_initial.sql
+---
 
-# Start proxy + dashboard in separate terminals
-pnpm dev:proxy
-pnpm dev:dashboard
-```
+## Tech stack
 
-## Pricing (per 1M tokens, input/output)
+- **Proxy:** Node.js + Fastify
+- **Dashboard:** Next.js + React
+- **Database:** PostgreSQL
+- **Auth:** Better Auth
 
-| Model              | Input   | Output  |
-|--------------------|---------|---------|
-| gpt-4o             | $2.50   | $10.00  |
-| gpt-4o-mini        | $0.15   | $0.60   |
-| gpt-4-turbo        | $10.00  | $30.00  |
-| o1                 | $15.00  | $60.00  |
-| claude-3-5-sonnet  | $3.00   | $15.00  |
-| claude-3-5-haiku   | $0.80   | $4.00   |
-| claude-3-opus      | $15.00  | $75.00  |
-| claude-sonnet-4    | $3.00   | $15.00  |
+---
 
-Versioned model names (e.g. `gpt-4o-2024-08-06`) are matched by prefix.
+## License
+
+MIT — free to use, modify, and distribute. See [LICENSE](LICENSE).
